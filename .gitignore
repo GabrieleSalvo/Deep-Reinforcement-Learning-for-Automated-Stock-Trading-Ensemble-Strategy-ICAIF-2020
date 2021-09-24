@@ -1,5 +1,6 @@
 # Custom config
 results/
+trained_models/
 
 
 # remove DS_Store
