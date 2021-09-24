@@ -7,6 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pickle
+from config import config
 
 # shares normalization factor
 # 100 shares per trade
@@ -14,9 +15,7 @@ HMAX_NORMALIZE = 100
 # initial amount of money we have in our account
 INITIAL_ACCOUNT_BALANCE=1000000
 # total number of stocks in our portfolio
-STOCK_DIM = 30
-# transaction fee: 1/1000 reasonable percentage
-TRANSACTION_FEE_PERCENT = 0.001
+# STOCK_DIM = 101
 REWARD_SCALING = 1e-4
 
 class StockEnvTrain(gym.Env):
@@ -30,17 +29,17 @@ class StockEnvTrain(gym.Env):
         self.df = df
 
         # action_space normalization and shape is STOCK_DIM
-        self.action_space = spaces.Box(low = -1, high = 1,shape = (STOCK_DIM,)) 
+        self.action_space = spaces.Box(low = -1, high = 1,shape = (config.STOCK_DIM,)) 
         # Shape = 181: [Current Balance]+[prices 1-30]+[owned shares 1-30] 
         # +[macd 1-30]+ [rsi 1-30] + [cci 1-30] + [adx 1-30]
-        self.observation_space = spaces.Box(low=0, high=np.inf, shape = (181,))
+        self.observation_space = spaces.Box(low=0, high=np.inf, shape = (1+6*config.STOCK_DIM,))
         # load data from a pandas dataframe
         self.data = self.df.loc[self.day,:]
         self.terminal = False             
         # initalize state
         self.state = [INITIAL_ACCOUNT_BALANCE] + \
                       self.data.adjcp.values.tolist() + \
-                      [0]*STOCK_DIM + \
+                      [0]*config.STOCK_DIM + \
                       self.data.macd.values.tolist() + \
                       self.data.rsi.values.tolist() + \
                       self.data.cci.values.tolist() + \
@@ -58,15 +57,15 @@ class StockEnvTrain(gym.Env):
 
     def _sell_stock(self, index, action):
         # perform sell action based on the sign of the action
-        if self.state[index+STOCK_DIM+1] > 0:
+        if self.state[index+config.STOCK_DIM+1] > 0:
             #update balance
             self.state[0] += \
-            self.state[index+1]*min(abs(action),self.state[index+STOCK_DIM+1]) * \
-             (1- TRANSACTION_FEE_PERCENT)
+            self.state[index+1]*min(abs(action),self.state[index+config.STOCK_DIM+1]) * \
+             (1- config.TRANSACTION_FEE_PERCENT)
 
-            self.state[index+STOCK_DIM+1] -= min(abs(action), self.state[index+STOCK_DIM+1])
-            self.cost +=self.state[index+1]*min(abs(action),self.state[index+STOCK_DIM+1]) * \
-             TRANSACTION_FEE_PERCENT
+            self.state[index+config.STOCK_DIM+1] -= min(abs(action), self.state[index+config.STOCK_DIM+1])
+            self.cost +=self.state[index+1]*min(abs(action),self.state[index+config.STOCK_DIM+1]) * \
+             config.TRANSACTION_FEE_PERCENT
             self.trades+=1
         else:
             pass
@@ -79,12 +78,12 @@ class StockEnvTrain(gym.Env):
 
         #update balance
         self.state[0] -= self.state[index+1]*min(available_amount, action)* \
-                          (1+ TRANSACTION_FEE_PERCENT)
+                          (1+ config.TRANSACTION_FEE_PERCENT)
 
-        self.state[index+STOCK_DIM+1] += min(available_amount, action)
+        self.state[index+config.STOCK_DIM+1] += min(available_amount, action)
 
         self.cost+=self.state[index+1]*min(available_amount, action)* \
-                          TRANSACTION_FEE_PERCENT
+                          config.TRANSACTION_FEE_PERCENT
         self.trades+=1
         
     def step(self, actions):
@@ -97,19 +96,19 @@ class StockEnvTrain(gym.Env):
             plt.savefig('results/account_value_train.png')
             plt.close()
             end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]))
+            sum(np.array(self.state[1:(config.STOCK_DIM+1)])*np.array(self.state[(config.STOCK_DIM+1):(config.STOCK_DIM*2+1)]))
             
             #print("end_total_asset:{}".format(end_total_asset))
             df_total_value = pd.DataFrame(self.asset_memory)
             df_total_value.to_csv('results/account_value_train.csv')
-            #print("total_reward:{}".format(self.state[0]+sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):61]))- INITIAL_ACCOUNT_BALANCE ))
+            #print("total_reward:{}".format(self.state[0]+sum(np.array(self.state[1:(config.STOCK_DIM+1)])*np.array(self.state[(config.STOCK_DIM+1):61]))- INITIAL_ACCOUNT_BALANCE ))
             #print("total_cost: ", self.cost)
-            #print("total_trades: ", self.trades)
+            print("total_trades: ", self.trades)
             df_total_value.columns = ['account_value']
             df_total_value['daily_return']=df_total_value.pct_change(1)
             sharpe = (252**0.5)*df_total_value['daily_return'].mean()/ \
-                  df_total_value['daily_return'].std()
-            #print("Sharpe: ",sharpe)
+                  (df_total_value['daily_return'].std() + np.finfo(float).eps)
+            print("Sharpe: ",sharpe)
             #print("=================================")
             df_rewards = pd.DataFrame(self.rewards_memory)
             #df_rewards.to_csv('results/account_rewards_train.csv')
@@ -127,7 +126,7 @@ class StockEnvTrain(gym.Env):
             #actions = (actions.astype(int))
             
             begin_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]))
+            sum(np.array(self.state[1:(config.STOCK_DIM+1)])*np.array(self.state[(config.STOCK_DIM+1):(config.STOCK_DIM*2+1)]))
             #print("begin_total_asset:{}".format(begin_total_asset))
             
             argsort_actions = np.argsort(actions)
@@ -149,14 +148,14 @@ class StockEnvTrain(gym.Env):
             # print("stock_shares:{}".format(self.state[29:]))
             self.state =  [self.state[0]] + \
                     self.data.adjcp.values.tolist() + \
-                    list(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]) + \
+                    list(self.state[(config.STOCK_DIM+1):(config.STOCK_DIM*2+1)]) + \
                     self.data.macd.values.tolist() + \
                     self.data.rsi.values.tolist() + \
                     self.data.cci.values.tolist() + \
                     self.data.adx.values.tolist()
             
             end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]))
+            sum(np.array(self.state[1:(config.STOCK_DIM+1)])*np.array(self.state[(config.STOCK_DIM+1):(config.STOCK_DIM*2+1)]))
             self.asset_memory.append(end_total_asset)
             #print("end_total_asset:{}".format(end_total_asset))
             
@@ -181,7 +180,7 @@ class StockEnvTrain(gym.Env):
         #initiate state
         self.state = [INITIAL_ACCOUNT_BALANCE] + \
                       self.data.adjcp.values.tolist() + \
-                      [0]*STOCK_DIM + \
+                      [0]*config.STOCK_DIM + \
                       self.data.macd.values.tolist() + \
                       self.data.rsi.values.tolist() + \
                       self.data.cci.values.tolist() + \
