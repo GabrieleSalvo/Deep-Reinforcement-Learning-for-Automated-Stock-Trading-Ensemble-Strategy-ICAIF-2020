@@ -29,7 +29,7 @@ def train_A2C(env_train, model_name, timesteps=25000):
     """A2C model"""
 
     start = time.time()
-    model = A2C('MlpPolicy', env_train, verbose=0)
+    model = A2C('MlpPolicy', env_train, verbose=1)
     model.learn(total_timesteps=timesteps)
     end = time.time()
 
@@ -39,7 +39,7 @@ def train_A2C(env_train, model_name, timesteps=25000):
 
 def train_ACER(env_train, model_name, timesteps=25000):
     start = time.time()
-    model = ACER('MlpPolicy', env_train, verbose=0)
+    model = ACER('MlpPolicy', env_train, verbose=1)
     model.learn(total_timesteps=timesteps)
     end = time.time()
 
@@ -145,7 +145,7 @@ def get_validation_sharpe(iteration):
     df_total_value.columns = ['account_value_train']
     df_total_value['daily_return'] = df_total_value.pct_change(1)
     sharpe = (4 ** 0.5) * df_total_value['daily_return'].mean() / \
-             df_total_value['daily_return'].std()
+             (df_total_value['daily_return'].std() + np.finfo(float).eps)
     return sharpe
 
 
@@ -164,7 +164,8 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
 
     # based on the analysis of the in-sample data
     #turbulence_threshold = 140
-    insample_turbulence = df[(df.datadate<20151000) & (df.datadate>=20090000)]
+    # 20151000 20090000
+    insample_turbulence = df[(df.datadate<=config.START_VALIDATION) & (df.datadate>=config.START_DATASET)]
     insample_turbulence = insample_turbulence.drop_duplicates(subset=['datadate'])
     insample_turbulence_threshold = np.quantile(insample_turbulence.turbulence.values, .90)
 
@@ -182,7 +183,7 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
         # Tuning trubulence index based on historical data
         # Turbulence lookback window is one quarter
         end_date_index = df.index[df["datadate"] == unique_trade_date[i - rebalance_window - validation_window]].to_list()[-1]
-        start_date_index = end_date_index - validation_window*30 + 1
+        start_date_index = end_date_index - validation_window*config.STOCK_DIM + 1
 
         historical_turbulence = df.iloc[start_date_index:(end_date_index + 1), :]
         #historical_turbulence = df[(df.datadate<unique_trade_date[i - rebalance_window - validation_window]) & (df.datadate>=(unique_trade_date[i - rebalance_window - validation_window - 63]))]
@@ -206,7 +207,7 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
 
         ############## Environment Setup starts ##############
         ## training env
-        train = data_split(df, start=20090000, end=unique_trade_date[i - rebalance_window - validation_window])
+        train = data_split(df, start=config.START_DATASET, end=unique_trade_date[i - rebalance_window - validation_window])
         env_train = DummyVecEnv([lambda: StockEnvTrain(train)])
 
         ## validation env
@@ -219,7 +220,7 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
         ############## Environment Setup ends ##############
 
         ############## Training and Validation starts ##############
-        print("======Model training from: ", 20090000, "to ",
+        print("======Model training from: ", config.START_DATASET, "to ",
               unique_trade_date[i - rebalance_window - validation_window])
         # print("training: ",len(data_split(df, start=20090000, end=test.datadate.unique()[i-rebalance_window]) ))
         # print("==============Model Training===========")
